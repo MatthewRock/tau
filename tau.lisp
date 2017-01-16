@@ -3,23 +3,30 @@
 (in-package :cl-user)
 
 (defpackage #:tau
-  (:use #:cl #:hash-set)
-  (:export :ibm-model-1))
+  (:use #:cl #:hash-set #:command-line-arguments)
+  (:export :main))
 
 (in-package #:tau)
 
 (declaim (optimize (speed 3) (safety 1)))
 
-(defun ibm-model-1 (english-list foreign-list &key (iterations 1000))
+(defun ibm-model-1 (f-list english-list &key (iterations 1000))
   (declare (type fixnum iterations)
-           (type list english-list foreign-list)
+           (type list f-list english-list)
            (optimize (speed 3) (safety 1)))
-  (let* ((f-keys (list-to-hs foreign-list))
-         (so-called-t (make-hash-table :test #'equal :size (hs-count f-keys)))
-         (default-t-val (the single-float (/ 1.0 (the integer
-                                                      (hs-count f-keys)))))
+  (let* ((foreign-list (mapcar (lambda (x) (cons "NULL" x)) f-list))
+         (f-keys (let ((temp (make-instance 'hash-set)))
+                   (mapc (lambda (x)
+                           (mapc (lambda (y)
+                                         (setf temp (hs-insert temp y)))
+                                   x))
+                        foreign-list)
+                   temp))
          (words-combination (* (length english-list)
                                (length foreign-list)))
+         (so-called-t (make-hash-table :test #'equal :size words-combination))
+         (default-t-val (the single-float (/ 1.0 (the integer
+                                                      (hs-count f-keys)))))
          (f-keys-len (hs-count f-keys)))
     (loop repeat iterations ; amount of iterations
        for count = (make-hash-table :test #'equal :size words-combination)
@@ -52,4 +59,50 @@
                           (/ (the single-float (gethash keys count 0.0))
                              (the single-float (gethash f total)))))
                   count))
-    so-called-t))
+    (values so-called-t
+            0.0)))
+
+;; (reduce #'- (mapcar (lambda (f e)
+;;                       (reduce #'+ (mapcar (lambda (f-w e-w)
+;;                                             (log (gethash (cons e-w f-w) so-called-t) 2))
+;;                                           f e) :initial-value 0.0))
+;;                     f-list english-list) :initial-value 0.0)
+
+(defun split-line (line)
+  (declare (type string line))
+  (cl-ppcre:split " " (format nil "~(~A~)" line)))
+
+(defun train (english-file foreign-file &optional (iterations 1000))
+  (ibm-model-1 (make-corpora foreign-file) (make-corpora english-file) :iterations iterations))
+
+(defun make-corpora (filepath)
+  (format t filepath)
+  (with-open-file (in filepath)
+    (loop for line = (read-line in nil 'eof nil)
+       while (not (eq 'eof line)) collect (split-line line))))
+
+(defparameter +command-line-spec+
+  '(((#\e "english") :type string :documentation "English corpora file.")
+    ((#\f "foreign") :type string :documentation "Foreign corpora file.")
+    ((#\i "iterations") :type integer :optional t :documentation "Amount of iterations, 1000 by default.")
+    ((#\h #\? "help") :type boolean :optional t :documentation "Show help.")))
+
+(defun train-and-print (args english foreign iterations &key help)
+  (when help (progn (show-option-help +command-line-spec+ :sort-names t) (uiop:quit)))
+  (multiple-value-bind (praw perplexity) (train english foreign (or (and iterations
+                                                                         (parse-integer (car iterations)))
+                                                                    1000))
+    (maphash (lambda (k v)
+               (when (> v 0.001)
+                 (format t "~A~T~A~T~,4F~%" (cdr k) (car k) v)))
+             praw)
+    (format t "~%~%Perplexity: ~F~%" perplexity)))
+
+(defun main (args)
+  (handle-command-line
+   +command-line-spec+
+   'train-and-print
+   :command-line args
+   :name "Ibm model 1 in Lisp"
+   :positional-arity 3
+   :rest-arity t))
