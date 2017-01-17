@@ -14,11 +14,13 @@
   (declare (type fixnum iterations)
            (type list f-list english-list)
            (optimize (speed 3) (safety 1)))
-  (let* ((foreign-list (mapcar (lambda (x) (cons "NULL" x)) f-list))
+  (setf lparallel:*kernel* (lparallel:make-kernel 4))
+  (let* ((foreign-list (lparallel:pmapcar (lambda (x) (cons "NULL" x)) f-list))
          (f-keys (let ((temp (make-instance 'hash-set)))
-                   (mapc (lambda (x)
-                           (mapc (lambda (y)
-                                         (setf temp (hs-insert temp y)))
+                   (lparallel:pmapc (lambda (x)
+                           (lparallel:pmapc (lambda (y)
+                                         (setf temp (hs-insert temp y))
+                                         nil)
                                    x))
                         foreign-list)
                    temp))
@@ -28,7 +30,7 @@
          (default-t-val (the single-float (/ 1.0 (the integer
                                                       (hs-count f-keys)))))
          (f-keys-len (hs-count f-keys)))
-    (loop repeat iterations ; amount of iterations
+    (loop repeat iterations
        for count = (make-hash-table :test #'equal :size words-combination)
        for total = (make-hash-table :test #'equal :size f-keys-len)
        for s-total = (make-hash-table :test #'equal :size f-keys-len)
@@ -76,7 +78,6 @@
   (ibm-model-1 (make-corpora foreign-file) (make-corpora english-file) :iterations iterations))
 
 (defun make-corpora (filepath)
-  (format t filepath)
   (with-open-file (in filepath)
     (loop for line = (read-line in nil 'eof nil)
        while (not (eq 'eof line)) collect (split-line line))))
