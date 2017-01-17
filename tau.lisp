@@ -15,6 +15,7 @@
            (type list f-list english-list)
            (optimize (speed 3) (safety 1)))
   (setf lparallel:*kernel* (lparallel:make-kernel 4))
+  (loop for i from 0 below 7 do (setf (sb-ext:generation-minimum-age-before-gc i) 0.4d0))
   (let* ((foreign-list (lparallel:pmapcar (lambda (x) (cons "NULL" x)) f-list))
          (f-keys (let ((temp (make-instance 'hash-set)))
                    (lparallel:pmapc (lambda (x)
@@ -33,13 +34,12 @@
     (loop repeat iterations
        for count = (make-hash-table :test #'equal :size words-combination)
        for total = (make-hash-table :test #'equal :size f-keys-len)
-       for s-total = (make-hash-table :test #'equal :size f-keys-len)
        do
          (loop for es in english-list
             for fs in foreign-list
+            for s-total = (make-hash-table :test #'equal :size f-keys-len)
             do
               (dolist (e es)
-                (setf (gethash e s-total) 0.0)
                 (dolist (f fs)
                   (incf (the single-float (gethash e s-total 0.0))
                         (the single-float (gethash (cons e f) so-called-t default-t-val)))))
